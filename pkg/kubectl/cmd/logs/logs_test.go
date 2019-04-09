@@ -34,6 +34,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	restclient "k8s.io/client-go/rest"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
+	"k8s.io/kubernetes/pkg/kubectl/polymorphichelpers"
 )
 
 func TestLog(t *testing.T) {
@@ -47,7 +48,7 @@ func TestLog(t *testing.T) {
 			name: "v1 - pod log",
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				mock := &logTestMock{
-					logsForObjectRequests: []restclient.ResponseWrapper{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
 						&responseWrapperMock{data: strings.NewReader("test log content\n")},
 					},
 				}
@@ -61,10 +62,34 @@ func TestLog(t *testing.T) {
 			expectedOutSubstrings: []string{"test log content\n"},
 		},
 		{
+			name: "pod logs with prefix",
+			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
+				mock := &logTestMock{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
+						&responseWrapperMock{
+							data: strings.NewReader("test log content\n"),
+							sourcePod: &corev1.Pod{
+								ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "test"},
+							},
+							sourceContainer: &corev1.Container{Name: "test-container"},
+						},
+					},
+				}
+
+				o := NewLogsOptions(streams, false)
+				o.LogsForObject = mock.mockLogsForObject
+				o.ConsumeRequestFn = mock.mockConsumeRequest
+				o.Prefix = true
+
+				return o
+			},
+			expectedOutSubstrings: []string{"[pod/test-pod -c test-container] test log content\n"},
+		},
+		{
 			name: "get logs from multiple requests sequentially",
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				mock := &logTestMock{
-					logsForObjectRequests: []restclient.ResponseWrapper{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
 						&responseWrapperMock{data: strings.NewReader("test log content from source 1\n")},
 						&responseWrapperMock{data: strings.NewReader("test log content from source 2\n")},
 						&responseWrapperMock{data: strings.NewReader("test log content from source 3\n")},
@@ -86,7 +111,7 @@ func TestLog(t *testing.T) {
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				wg := &sync.WaitGroup{}
 				mock := &logTestMock{
-					logsForObjectRequests: []restclient.ResponseWrapper{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
 						&responseWrapperMock{data: strings.NewReader("test log content from source 1\n")},
 						&responseWrapperMock{data: strings.NewReader("test log content from source 2\n")},
 						&responseWrapperMock{data: strings.NewReader("test log content from source 3\n")},
@@ -108,11 +133,56 @@ func TestLog(t *testing.T) {
 			},
 		},
 		{
+			name: "follow logs from multiple requests concurrently with prefix",
+			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
+				wg := &sync.WaitGroup{}
+				mock := &logTestMock{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
+						&responseWrapperMock{
+							data: strings.NewReader("test log content from source 1\n"),
+							sourcePod: &corev1.Pod{
+								ObjectMeta: metav1.ObjectMeta{Name: "test-pod-1", Namespace: "test"},
+							},
+							sourceContainer: &corev1.Container{Name: "test-container-1"},
+						},
+						&responseWrapperMock{
+							data: strings.NewReader("test log content from source 2\n"),
+							sourcePod: &corev1.Pod{
+								ObjectMeta: metav1.ObjectMeta{Name: "test-pod-2", Namespace: "test"},
+							},
+							sourceContainer: &corev1.Container{Name: "test-container-2"},
+						},
+						&responseWrapperMock{
+							data: strings.NewReader("test log content from source 3\n"),
+							sourcePod: &corev1.Pod{
+								ObjectMeta: metav1.ObjectMeta{Name: "test-pod-3", Namespace: "test"},
+							},
+							sourceContainer: &corev1.Container{Name: "test-container-3"},
+						},
+					},
+					wg: wg,
+				}
+				wg.Add(3)
+
+				o := NewLogsOptions(streams, false)
+				o.LogsForObject = mock.mockLogsForObject
+				o.ConsumeRequestFn = mock.mockConsumeRequest
+				o.Follow = true
+				o.Prefix = true
+				return o
+			},
+			expectedOutSubstrings: []string{
+				"[pod/test-pod-1 -c test-container-1] test log content from source 1\n",
+				"[pod/test-pod-2 -c test-container-2] test log content from source 2\n",
+				"[pod/test-pod-3 -c test-container-3] test log content from source 3\n",
+			},
+		},
+		{
 			name: "fail to follow logs from multiple requests when there are more logs sources then MaxFollowConcurency allows",
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				wg := &sync.WaitGroup{}
 				mock := &logTestMock{
-					logsForObjectRequests: []restclient.ResponseWrapper{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
 						&responseWrapperMock{data: strings.NewReader("test log content\n")},
 						&responseWrapperMock{data: strings.NewReader("test log content\n")},
 						&responseWrapperMock{data: strings.NewReader("test log content\n")},
@@ -134,7 +204,7 @@ func TestLog(t *testing.T) {
 			name: "fail if LogsForObject fails",
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				o := NewLogsOptions(streams, false)
-				o.LogsForObject = func(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) ([]restclient.ResponseWrapper, error) {
+				o.LogsForObject = func(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) ([]polymorphichelpers.LogsForObjectResponseWrapper, error) {
 					return nil, errors.New("Error from the LogsForObject")
 				}
 				return o
@@ -145,7 +215,7 @@ func TestLog(t *testing.T) {
 			name: "fail to get logs, if ConsumeRequestFn fails",
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				mock := &logTestMock{
-					logsForObjectRequests: []restclient.ResponseWrapper{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
 						&responseWrapperMock{},
 						&responseWrapperMock{},
 					},
@@ -165,7 +235,7 @@ func TestLog(t *testing.T) {
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				wg := &sync.WaitGroup{}
 				mock := &logTestMock{
-					logsForObjectRequests: []restclient.ResponseWrapper{
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{
 						&responseWrapperMock{},
 						&responseWrapperMock{},
 						&responseWrapperMock{},
@@ -188,7 +258,7 @@ func TestLog(t *testing.T) {
 			name: "fail to follow logs, if ConsumeRequestFn fails",
 			opts: func(streams genericclioptions.IOStreams) *LogsOptions {
 				mock := &logTestMock{
-					logsForObjectRequests: []restclient.ResponseWrapper{&responseWrapperMock{}},
+					logsForObjectRequests: []polymorphichelpers.LogsForObjectResponseWrapper{&responseWrapperMock{}},
 				}
 
 				o := NewLogsOptions(streams, false)
@@ -426,7 +496,7 @@ func TestLogComplete(t *testing.T) {
 func TestDefaultConsumeRequest(t *testing.T) {
 	tests := []struct {
 		name        string
-		request     restclient.ResponseWrapper
+		request     polymorphichelpers.LogsForObjectResponseWrapper
 		expectedErr string
 		expectedOut string
 	}{
@@ -493,6 +563,9 @@ func TestDefaultConsumeRequest(t *testing.T) {
 type responseWrapperMock struct {
 	data io.Reader
 	err  error
+
+	sourcePod       *corev1.Pod
+	sourceContainer *corev1.Container
 }
 
 func (r *responseWrapperMock) DoRaw() ([]byte, error) {
@@ -504,8 +577,16 @@ func (r *responseWrapperMock) Stream() (io.ReadCloser, error) {
 	return ioutil.NopCloser(r.data), r.err
 }
 
+func (r *responseWrapperMock) SourcePod() *corev1.Pod {
+	return r.sourcePod
+}
+
+func (r *responseWrapperMock) SourceContainer() *corev1.Container {
+	return r.sourceContainer
+}
+
 type logTestMock struct {
-	logsForObjectRequests []restclient.ResponseWrapper
+	logsForObjectRequests []polymorphichelpers.LogsForObjectResponseWrapper
 
 	// We need a WaitGroup in some test cases to make sure that we fetch logs concurrently.
 	// These test cases will finish successfully without the WaitGroup, but the WaitGroup
@@ -530,7 +611,7 @@ func (l *logTestMock) mockConsumeRequest(request restclient.ResponseWrapper, out
 	return err
 }
 
-func (l *logTestMock) mockLogsForObject(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) ([]restclient.ResponseWrapper, error) {
+func (l *logTestMock) mockLogsForObject(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) ([]polymorphichelpers.LogsForObjectResponseWrapper, error) {
 	switch object.(type) {
 	case *corev1.Pod:
 		_, ok := options.(*corev1.PodLogOptions)

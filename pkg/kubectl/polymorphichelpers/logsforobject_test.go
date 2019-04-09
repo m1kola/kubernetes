@@ -44,96 +44,102 @@ func TestLogsForObject(t *testing.T) {
 		obj           runtime.Object
 		opts          *corev1.PodLogOptions
 		allContainers bool
-		pods          []runtime.Object
+		clientsetPods []runtime.Object
 		actions       []testclient.Action
+
+		expectedErr              string
+		expectedSourcePods       []*corev1.Pod
+		expectedSourceContainers []*corev1.Container
 	}{
 		{
 			name: "pod logs",
-			obj: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "hello", Namespace: "test"},
-			},
-			pods: []runtime.Object{testPod()},
+			obj:  testPodWithOneContainers(),
 			actions: []testclient.Action{
 				getLogsAction("test", nil),
 			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithOneContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithOneContainers().Spec.Containers[0],
+			},
 		},
 		{
-			name: "pod logs: all containers",
-			obj: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "hello", Namespace: "test"},
-				Spec: corev1.PodSpec{
-					InitContainers: []corev1.Container{
-						{Name: "initc1"},
-						{Name: "initc2"},
-					},
-					Containers: []corev1.Container{
-						{Name: "c1"},
-						{Name: "c2"},
-					},
-				},
-			},
+			name:          "pod logs: all containers",
+			obj:           testPodWithTwoContainersAndTwoInitContainers(),
 			opts:          &corev1.PodLogOptions{},
 			allContainers: true,
-			pods:          []runtime.Object{testPod()},
 			actions: []testclient.Action{
-				getLogsAction("test", &corev1.PodLogOptions{Container: "initc1"}),
-				getLogsAction("test", &corev1.PodLogOptions{Container: "initc2"}),
-				getLogsAction("test", &corev1.PodLogOptions{Container: "c1"}),
-				getLogsAction("test", &corev1.PodLogOptions{Container: "c2"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-initc1"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-initc2"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c1"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c2"}),
 			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithTwoContainersAndTwoInitContainers(),
+				testPodWithTwoContainersAndTwoInitContainers(),
+				testPodWithTwoContainersAndTwoInitContainers(),
+				testPodWithTwoContainersAndTwoInitContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[0],
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[1],
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[0],
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[1],
+			},
+		},
+		{
+			name:        "pod logs: error - must provide container name",
+			obj:         testPodWithTwoContainers(),
+			expectedErr: "a container name must be specified for pod foo-two-containers, choose one of: [foo-2-c1 foo-2-c2]",
 		},
 		{
 			name: "pods list logs",
 			obj: &corev1.PodList{
-				Items: []corev1.Pod{
-					{
-						ObjectMeta: metav1.ObjectMeta{Name: "hello", Namespace: "test"},
-						Spec: corev1.PodSpec{
-							InitContainers: []corev1.Container{
-								{Name: "initc1"},
-								{Name: "initc2"},
-							},
-							Containers: []corev1.Container{
-								{Name: "c1"},
-								{Name: "c2"},
-							},
-						},
-					},
-				},
+				Items: []corev1.Pod{*testPodWithOneContainers()},
 			},
-			pods: []runtime.Object{testPod()},
 			actions: []testclient.Action{
 				getLogsAction("test", nil),
+			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithOneContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithOneContainers().Spec.Containers[0],
 			},
 		},
 		{
 			name: "pods list logs: all containers",
 			obj: &corev1.PodList{
-				Items: []corev1.Pod{
-					{
-						ObjectMeta: metav1.ObjectMeta{Name: "hello", Namespace: "test"},
-						Spec: corev1.PodSpec{
-							InitContainers: []corev1.Container{
-								{Name: "initc1"},
-								{Name: "initc2"},
-							},
-							Containers: []corev1.Container{
-								{Name: "c1"},
-								{Name: "c2"},
-							},
-						},
-					},
-				},
+				Items: []corev1.Pod{*testPodWithTwoContainersAndTwoInitContainers()},
 			},
 			opts:          &corev1.PodLogOptions{},
 			allContainers: true,
-			pods:          []runtime.Object{testPod()},
 			actions: []testclient.Action{
-				getLogsAction("test", &corev1.PodLogOptions{Container: "initc1"}),
-				getLogsAction("test", &corev1.PodLogOptions{Container: "initc2"}),
-				getLogsAction("test", &corev1.PodLogOptions{Container: "c1"}),
-				getLogsAction("test", &corev1.PodLogOptions{Container: "c2"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-initc1"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-initc2"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c1"}),
+				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c2"}),
 			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithTwoContainersAndTwoInitContainers(),
+				testPodWithTwoContainersAndTwoInitContainers(),
+				testPodWithTwoContainersAndTwoInitContainers(),
+				testPodWithTwoContainersAndTwoInitContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[0],
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[1],
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[0],
+				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[1],
+			},
+		},
+		{
+			name: "pods list logs: error - must provide container name",
+			obj: &corev1.PodList{
+				Items: []corev1.Pod{*testPodWithTwoContainersAndTwoInitContainers()},
+			},
+			expectedErr: "a container name must be specified for pod foo-two-containers-and-two-init-containers, choose one of: [foo-2-and-2-c1 foo-2-and-2-c2] or one of the init containers: [foo-2-and-2-initc1 foo-2-and-2-initc2]",
 		},
 		{
 			name: "replication controller logs",
@@ -143,10 +149,16 @@ func TestLogsForObject(t *testing.T) {
 					Selector: map[string]string{"foo": "bar"},
 				},
 			},
-			pods: []runtime.Object{testPod()},
+			clientsetPods: []runtime.Object{testPodWithOneContainers()},
 			actions: []testclient.Action{
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
+			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithOneContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithOneContainers().Spec.Containers[0],
 			},
 		},
 		{
@@ -157,10 +169,16 @@ func TestLogsForObject(t *testing.T) {
 					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"foo": "bar"}},
 				},
 			},
-			pods: []runtime.Object{testPod()},
+			clientsetPods: []runtime.Object{testPodWithOneContainers()},
 			actions: []testclient.Action{
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
+			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithOneContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithOneContainers().Spec.Containers[0],
 			},
 		},
 		{
@@ -171,10 +189,16 @@ func TestLogsForObject(t *testing.T) {
 					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"foo": "bar"}},
 				},
 			},
-			pods: []runtime.Object{testPod()},
+			clientsetPods: []runtime.Object{testPodWithOneContainers()},
 			actions: []testclient.Action{
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
+			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithOneContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithOneContainers().Spec.Containers[0],
 			},
 		},
 		{
@@ -185,10 +209,16 @@ func TestLogsForObject(t *testing.T) {
 					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"foo": "bar"}},
 				},
 			},
-			pods: []runtime.Object{testPod()},
+			clientsetPods: []runtime.Object{testPodWithOneContainers()},
 			actions: []testclient.Action{
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
+			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithOneContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithOneContainers().Spec.Containers[0],
 			},
 		},
 		{
@@ -199,20 +229,67 @@ func TestLogsForObject(t *testing.T) {
 					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"foo": "bar"}},
 				},
 			},
-			pods: []runtime.Object{testPod()},
+			clientsetPods: []runtime.Object{testPodWithOneContainers()},
 			actions: []testclient.Action{
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
+			},
+			expectedSourcePods: []*corev1.Pod{
+				testPodWithOneContainers(),
+			},
+			expectedSourceContainers: []*corev1.Container{
+				&testPodWithOneContainers().Spec.Containers[0],
 			},
 		},
 	}
 
 	for _, test := range tests {
-		fakeClientset := fakeexternal.NewSimpleClientset(test.pods...)
-		_, err := logsForObjectWithClient(fakeClientset.CoreV1(), test.obj, test.opts, 20*time.Second, test.allContainers)
-		if err != nil {
+		fakeClientset := fakeexternal.NewSimpleClientset(test.clientsetPods...)
+		responses, err := logsForObjectWithClient(fakeClientset.CoreV1(), test.obj, test.opts, 20*time.Second, test.allContainers)
+		if test.expectedErr == "" && err != nil {
 			t.Errorf("%s: unexpected error: %v", test.name, err)
 			continue
+		}
+
+		if err != nil && test.expectedErr != err.Error() {
+			t.Errorf("%s: expected error: %v, got: %v", test.name, test.expectedErr, err)
+			continue
+		}
+
+		if len(test.expectedSourcePods) != len(responses) {
+			t.Errorf(
+				"%s: the number of expected source pods doesn't match the number of responses: %v, got: %v",
+				test.name,
+				len(test.expectedSourcePods),
+				len(responses),
+			)
+			continue
+		}
+
+		if len(test.expectedSourceContainers) != len(responses) {
+			t.Errorf(
+				"%s: the number of expected source containers doesn't match the number of responses: %v, got: %v",
+				test.name,
+				len(test.expectedSourceContainers),
+				len(responses),
+			)
+			continue
+		}
+
+		for i := range test.expectedSourcePods {
+			got := responses[i].SourcePod()
+			want := test.expectedSourcePods[i]
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("%s: unexpected source pod: %s", test.name, diff.ObjectDiff(got, want))
+			}
+		}
+
+		for i := range test.expectedSourcePods {
+			got := responses[i].SourceContainer()
+			want := test.expectedSourceContainers[i]
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("%s: unexpected source container: %s", test.name, diff.ObjectDiff(got, want))
+			}
 		}
 
 		for i := range test.actions {
@@ -230,7 +307,7 @@ func TestLogsForObject(t *testing.T) {
 	}
 }
 
-func testPod() runtime.Object {
+func testPodWithOneContainers() *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
@@ -242,7 +319,43 @@ func testPod() runtime.Object {
 			DNSPolicy:     corev1.DNSClusterFirst,
 			Containers: []corev1.Container{
 				{Name: "c1"},
-				{Name: "c2"},
+			},
+		},
+	}
+}
+
+func testPodWithTwoContainers() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foo-two-containers",
+			Namespace: "test",
+			Labels:    map[string]string{"foo": "bar"},
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyAlways,
+			DNSPolicy:     corev1.DNSClusterFirst,
+			Containers: []corev1.Container{
+				{Name: "foo-2-c1"},
+				{Name: "foo-2-c2"},
+			},
+		},
+	}
+}
+
+func testPodWithTwoContainersAndTwoInitContainers() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foo-two-containers-and-two-init-containers",
+			Namespace: "test",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: "foo-2-and-2-initc1"},
+				{Name: "foo-2-and-2-initc2"},
+			},
+			Containers: []corev1.Container{
+				{Name: "foo-2-and-2-c1"},
+				{Name: "foo-2-and-2-c2"},
 			},
 		},
 	}

@@ -64,6 +64,10 @@ var (
 		# Begin streaming the logs from all containers in pods defined by label app=nginx
 		kubectl logs -f -lapp=nginx --all-containers=true
 
+		# Begin streaming the logs from all containers in pods defined by label app=nginx.
+		# Each line will be prefixed with the log source (pod name and container name)
+		kubectl logs -f -lapp=nginx --all-containers=true --prefix
+
 		# Display only the most recent 20 lines of output in pod nginx
 		kubectl logs --tail=20 nginx
 
@@ -108,6 +112,7 @@ type LogsOptions struct {
 	ContainerNameSpecified bool
 	Selector               string
 	MaxFollowConcurency    int
+	Prefix                 bool
 
 	Object           runtime.Object
 	GetPodTimeout    time.Duration
@@ -161,6 +166,7 @@ func NewCmdLogs(f cmdutil.Factory, streams genericclioptions.IOStreams) *cobra.C
 	cmdutil.AddPodRunningTimeoutFlag(cmd, defaultPodLogsTimeout)
 	cmd.Flags().StringVarP(&o.Selector, "selector", "l", o.Selector, "Selector (label query) to filter on.")
 	cmd.Flags().IntVar(&o.MaxFollowConcurency, "max-log-requests", o.MaxFollowConcurency, "Specify maximum number of concurrent logs to follow when using by a selector. Defaults to 5.")
+	cmd.Flags().BoolVar(&o.Prefix, "prefix", o.Prefix, "Prefix each log line with the log source (pod name and container name)")
 	return cmd
 }
 
@@ -318,13 +324,14 @@ func (o LogsOptions) RunLogs() error {
 	return o.sequentialConsumeRequest(requests)
 }
 
-func (o LogsOptions) parallelConsumeRequest(requests []rest.ResponseWrapper) error {
+func (o LogsOptions) parallelConsumeRequest(requests []polymorphichelpers.LogsForObjectResponseWrapper) error {
 	reader, writer := io.Pipe()
 	wg := &sync.WaitGroup{}
 	wg.Add(len(requests))
 	for _, request := range requests {
-		go func(request rest.ResponseWrapper) {
-			if err := o.ConsumeRequestFn(request, writer); err != nil {
+		go func(request polymorphichelpers.LogsForObjectResponseWrapper) {
+			out := o.addPrefixIfNeeded(request, writer)
+			if err := o.ConsumeRequestFn(request, out); err != nil {
 				if !o.IgnoreLogErrors {
 					writer.CloseWithError(err)
 
@@ -348,14 +355,27 @@ func (o LogsOptions) parallelConsumeRequest(requests []rest.ResponseWrapper) err
 	return err
 }
 
-func (o LogsOptions) sequentialConsumeRequest(requests []rest.ResponseWrapper) error {
+func (o LogsOptions) sequentialConsumeRequest(requests []polymorphichelpers.LogsForObjectResponseWrapper) error {
 	for _, request := range requests {
-		if err := o.ConsumeRequestFn(request, o.Out); err != nil {
+		out := o.addPrefixIfNeeded(request, o.Out)
+		if err := o.ConsumeRequestFn(request, out); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (o LogsOptions) addPrefixIfNeeded(request polymorphichelpers.LogsForObjectResponseWrapper, writer io.Writer) io.Writer {
+	if !o.Prefix {
+		return writer
+	}
+
+	prefix := fmt.Sprintf("[pod/%s -c %s] ", request.SourcePod().Name, request.SourceContainer().Name)
+	return &prefixingWriter{
+		prefix: []byte(prefix),
+		writer: writer,
+	}
 }
 
 // DefaultConsumeRequest reads the data from request and writes into
@@ -387,4 +407,26 @@ func DefaultConsumeRequest(request rest.ResponseWrapper, out io.Writer) error {
 			return nil
 		}
 	}
+}
+
+type prefixingWriter struct {
+	prefix []byte
+	writer io.Writer
+}
+
+func (pw *prefixingWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	// Perform an "atomic" write of a prefix and p to make sure that we do not interleave
+	// sub-line when used concurrently with io.PipeWrite.
+	n, err := pw.writer.Write(append(pw.prefix, p...))
+	if n > len(p) {
+		// To comply with the Writer interface requirements we must
+		// return a number of bytes written from p (0 <= n <= len(p)),
+		// so we are ignoring prefix here.
+		return len(p), err
+	}
+	return n, err
 }
