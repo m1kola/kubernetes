@@ -17,6 +17,7 @@ limitations under the License.
 package polymorphichelpers
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -47,9 +48,8 @@ func TestLogsForObject(t *testing.T) {
 		clientsetPods []runtime.Object
 		actions       []testclient.Action
 
-		expectedErr              string
-		expectedSourcePods       []*corev1.Pod
-		expectedSourceContainers []*corev1.Container
+		expectedErr     string
+		expectedSources []corev1.ObjectReference
 	}{
 		{
 			name: "pod logs",
@@ -57,11 +57,16 @@ func TestLogsForObject(t *testing.T) {
 			actions: []testclient.Action{
 				getLogsAction("test", nil),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithOneContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithOneContainers().Spec.Containers[0],
+			expectedSources: []corev1.ObjectReference{
+				{
+					Kind:            testPodWithOneContainers().Kind,
+					APIVersion:      testPodWithOneContainers().APIVersion,
+					Name:            testPodWithOneContainers().Name,
+					Namespace:       testPodWithOneContainers().Namespace,
+					UID:             testPodWithOneContainers().UID,
+					ResourceVersion: testPodWithOneContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithOneContainers().Spec.Containers[0].Name),
+				},
 			},
 		},
 		{
@@ -75,17 +80,43 @@ func TestLogsForObject(t *testing.T) {
 				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c1"}),
 				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c2"}),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithTwoContainersAndTwoInitContainers(),
-				testPodWithTwoContainersAndTwoInitContainers(),
-				testPodWithTwoContainersAndTwoInitContainers(),
-				testPodWithTwoContainersAndTwoInitContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[0],
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[1],
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[0],
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[1],
+			expectedSources: []corev1.ObjectReference{
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.initContainers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[0].Name),
+				},
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.initContainers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[1].Name),
+				},
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[0].Name),
+				},
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[1].Name),
+				},
 			},
 		},
 		{
@@ -101,12 +132,15 @@ func TestLogsForObject(t *testing.T) {
 			actions: []testclient.Action{
 				getLogsAction("test", nil),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithOneContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithOneContainers().Spec.Containers[0],
-			},
+			expectedSources: []corev1.ObjectReference{{
+				Kind:            testPodWithOneContainers().Kind,
+				APIVersion:      testPodWithOneContainers().APIVersion,
+				Name:            testPodWithOneContainers().Name,
+				Namespace:       testPodWithOneContainers().Namespace,
+				UID:             testPodWithOneContainers().UID,
+				ResourceVersion: testPodWithOneContainers().ResourceVersion,
+				FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithOneContainers().Spec.Containers[0].Name),
+			}},
 		},
 		{
 			name: "pods list logs: all containers",
@@ -121,17 +155,43 @@ func TestLogsForObject(t *testing.T) {
 				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c1"}),
 				getLogsAction("test", &corev1.PodLogOptions{Container: "foo-2-and-2-c2"}),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithTwoContainersAndTwoInitContainers(),
-				testPodWithTwoContainersAndTwoInitContainers(),
-				testPodWithTwoContainersAndTwoInitContainers(),
-				testPodWithTwoContainersAndTwoInitContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[0],
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[1],
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[0],
-				&testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[1],
+			expectedSources: []corev1.ObjectReference{
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.initContainers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[0].Name),
+				},
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.initContainers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.InitContainers[1].Name),
+				},
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[0].Name),
+				},
+				{
+					Kind:            testPodWithTwoContainersAndTwoInitContainers().Kind,
+					APIVersion:      testPodWithTwoContainersAndTwoInitContainers().APIVersion,
+					Name:            testPodWithTwoContainersAndTwoInitContainers().Name,
+					Namespace:       testPodWithTwoContainersAndTwoInitContainers().Namespace,
+					UID:             testPodWithTwoContainersAndTwoInitContainers().UID,
+					ResourceVersion: testPodWithTwoContainersAndTwoInitContainers().ResourceVersion,
+					FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithTwoContainersAndTwoInitContainers().Spec.Containers[1].Name),
+				},
 			},
 		},
 		{
@@ -154,12 +214,15 @@ func TestLogsForObject(t *testing.T) {
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithOneContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithOneContainers().Spec.Containers[0],
-			},
+			expectedSources: []corev1.ObjectReference{{
+				Kind:            testPodWithOneContainers().Kind,
+				APIVersion:      testPodWithOneContainers().APIVersion,
+				Name:            testPodWithOneContainers().Name,
+				Namespace:       testPodWithOneContainers().Namespace,
+				UID:             testPodWithOneContainers().UID,
+				ResourceVersion: testPodWithOneContainers().ResourceVersion,
+				FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithOneContainers().Spec.Containers[0].Name),
+			}},
 		},
 		{
 			name: "replica set logs",
@@ -174,12 +237,15 @@ func TestLogsForObject(t *testing.T) {
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithOneContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithOneContainers().Spec.Containers[0],
-			},
+			expectedSources: []corev1.ObjectReference{{
+				Kind:            testPodWithOneContainers().Kind,
+				APIVersion:      testPodWithOneContainers().APIVersion,
+				Name:            testPodWithOneContainers().Name,
+				Namespace:       testPodWithOneContainers().Namespace,
+				UID:             testPodWithOneContainers().UID,
+				ResourceVersion: testPodWithOneContainers().ResourceVersion,
+				FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithOneContainers().Spec.Containers[0].Name),
+			}},
 		},
 		{
 			name: "deployment logs",
@@ -194,12 +260,15 @@ func TestLogsForObject(t *testing.T) {
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithOneContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithOneContainers().Spec.Containers[0],
-			},
+			expectedSources: []corev1.ObjectReference{{
+				Kind:            testPodWithOneContainers().Kind,
+				APIVersion:      testPodWithOneContainers().APIVersion,
+				Name:            testPodWithOneContainers().Name,
+				Namespace:       testPodWithOneContainers().Namespace,
+				UID:             testPodWithOneContainers().UID,
+				ResourceVersion: testPodWithOneContainers().ResourceVersion,
+				FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithOneContainers().Spec.Containers[0].Name),
+			}},
 		},
 		{
 			name: "job logs",
@@ -214,12 +283,15 @@ func TestLogsForObject(t *testing.T) {
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithOneContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithOneContainers().Spec.Containers[0],
-			},
+			expectedSources: []corev1.ObjectReference{{
+				Kind:            testPodWithOneContainers().Kind,
+				APIVersion:      testPodWithOneContainers().APIVersion,
+				Name:            testPodWithOneContainers().Name,
+				Namespace:       testPodWithOneContainers().Namespace,
+				UID:             testPodWithOneContainers().UID,
+				ResourceVersion: testPodWithOneContainers().ResourceVersion,
+				FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithOneContainers().Spec.Containers[0].Name),
+			}},
 		},
 		{
 			name: "stateful set logs",
@@ -234,12 +306,15 @@ func TestLogsForObject(t *testing.T) {
 				testclient.NewListAction(podsResource, podsKind, "test", metav1.ListOptions{LabelSelector: "foo=bar"}),
 				getLogsAction("test", nil),
 			},
-			expectedSourcePods: []*corev1.Pod{
-				testPodWithOneContainers(),
-			},
-			expectedSourceContainers: []*corev1.Container{
-				&testPodWithOneContainers().Spec.Containers[0],
-			},
+			expectedSources: []corev1.ObjectReference{{
+				Kind:            testPodWithOneContainers().Kind,
+				APIVersion:      testPodWithOneContainers().APIVersion,
+				Name:            testPodWithOneContainers().Name,
+				Namespace:       testPodWithOneContainers().Namespace,
+				UID:             testPodWithOneContainers().UID,
+				ResourceVersion: testPodWithOneContainers().ResourceVersion,
+				FieldPath:       fmt.Sprintf("spec.containers{%s}", testPodWithOneContainers().Spec.Containers[0].Name),
+			}},
 		},
 	}
 
@@ -256,39 +331,27 @@ func TestLogsForObject(t *testing.T) {
 			continue
 		}
 
-		if len(test.expectedSourcePods) != len(responses) {
+		if len(test.expectedSources) != len(responses) {
 			t.Errorf(
-				"%s: the number of expected source pods doesn't match the number of responses: %v, got: %v",
+				"%s: the number of expected sources doesn't match the number of responses: %v, got: %v",
 				test.name,
-				len(test.expectedSourcePods),
+				len(test.expectedSources),
 				len(responses),
 			)
 			continue
 		}
 
-		if len(test.expectedSourceContainers) != len(responses) {
-			t.Errorf(
-				"%s: the number of expected source containers doesn't match the number of responses: %v, got: %v",
-				test.name,
-				len(test.expectedSourceContainers),
-				len(responses),
-			)
-			continue
-		}
+		// keys := make([]corev1.ObjectReference, 0, len(responses))
+		// for k := range responses {
+		// 	keys = append(keys, k)
+		// }
 
-		for i := range test.expectedSourcePods {
-			got := responses[i].SourcePod()
-			want := test.expectedSourcePods[i]
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("%s: unexpected source pod: %s", test.name, diff.ObjectDiff(got, want))
-			}
-		}
+		// fmt.Printf("**** %#v\n", keys[0])
+		// fmt.Printf("#### %#v\n", test.expectedSources[0])
 
-		for i := range test.expectedSourcePods {
-			got := responses[i].SourceContainer()
-			want := test.expectedSourceContainers[i]
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("%s: unexpected source container: %s", test.name, diff.ObjectDiff(got, want))
+		for _, ref := range test.expectedSources {
+			if _, ok := responses[ref]; !ok {
+				t.Errorf("%s: didn't find expected log source object reference: %#v", test.name, ref)
 			}
 		}
 
@@ -309,6 +372,10 @@ func TestLogsForObject(t *testing.T) {
 
 func testPodWithOneContainers() *corev1.Pod {
 	return &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo",
 			Namespace: "test",
@@ -326,6 +393,10 @@ func testPodWithOneContainers() *corev1.Pod {
 
 func testPodWithTwoContainers() *corev1.Pod {
 	return &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo-two-containers",
 			Namespace: "test",
@@ -344,6 +415,10 @@ func testPodWithTwoContainers() *corev1.Pod {
 
 func testPodWithTwoContainersAndTwoInitContainers() *corev1.Pod {
 	return &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo-two-containers-and-two-init-containers",
 			Namespace: "test",

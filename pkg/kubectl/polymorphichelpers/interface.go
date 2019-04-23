@@ -28,16 +28,8 @@ import (
 	"k8s.io/kubernetes/pkg/kubectl"
 )
 
-// LogsForObjectResponseWrapper defines an interface for the response struct that allows to get access to the source pod and container for logs
-type LogsForObjectResponseWrapper interface {
-	rest.ResponseWrapper
-
-	SourcePod() *v1.Pod
-	SourceContainer() *v1.Container
-}
-
 // LogsForObjectFunc is a function type that can tell you how to get logs for a runtime.object
-type LogsForObjectFunc func(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) ([]LogsForObjectResponseWrapper, error)
+type LogsForObjectFunc func(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) (map[v1.ObjectReference]rest.ResponseWrapper, error)
 
 // LogsForObjectFn gives a way to easily override the function for unit testing if needed.
 var LogsForObjectFn LogsForObjectFunc = logsForObject

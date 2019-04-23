@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 
@@ -63,10 +64,6 @@ var (
 
 		# Begin streaming the logs from all containers in pods defined by label app=nginx
 		kubectl logs -f -lapp=nginx --all-containers=true
-
-		# Begin streaming the logs from all containers in pods defined by label app=nginx.
-		# Each line will be prefixed with the log source (pod name and container name)
-		kubectl logs -f -lapp=nginx --all-containers=true --prefix
 
 		# Display only the most recent 20 lines of output in pod nginx
 		kubectl logs --tail=20 nginx
@@ -324,13 +321,13 @@ func (o LogsOptions) RunLogs() error {
 	return o.sequentialConsumeRequest(requests)
 }
 
-func (o LogsOptions) parallelConsumeRequest(requests []polymorphichelpers.LogsForObjectResponseWrapper) error {
+func (o LogsOptions) parallelConsumeRequest(requests map[corev1.ObjectReference]rest.ResponseWrapper) error {
 	reader, writer := io.Pipe()
 	wg := &sync.WaitGroup{}
 	wg.Add(len(requests))
-	for _, request := range requests {
-		go func(request polymorphichelpers.LogsForObjectResponseWrapper) {
-			out := o.addPrefixIfNeeded(request, writer)
+	for objRef, request := range requests {
+		go func(objRef corev1.ObjectReference, request rest.ResponseWrapper) {
+			out := o.addPrefixIfNeeded(objRef, writer)
 			if err := o.ConsumeRequestFn(request, out); err != nil {
 				if !o.IgnoreLogErrors {
 					writer.CloseWithError(err)
@@ -343,7 +340,7 @@ func (o LogsOptions) parallelConsumeRequest(requests []polymorphichelpers.LogsFo
 			}
 
 			wg.Done()
-		}(request)
+		}(objRef, request)
 	}
 
 	go func() {
@@ -355,9 +352,9 @@ func (o LogsOptions) parallelConsumeRequest(requests []polymorphichelpers.LogsFo
 	return err
 }
 
-func (o LogsOptions) sequentialConsumeRequest(requests []polymorphichelpers.LogsForObjectResponseWrapper) error {
-	for _, request := range requests {
-		out := o.addPrefixIfNeeded(request, o.Out)
+func (o LogsOptions) sequentialConsumeRequest(requests map[corev1.ObjectReference]rest.ResponseWrapper) error {
+	for objRef, request := range requests {
+		out := o.addPrefixIfNeeded(objRef, o.Out)
 		if err := o.ConsumeRequestFn(request, out); err != nil {
 			return err
 		}
@@ -366,12 +363,22 @@ func (o LogsOptions) sequentialConsumeRequest(requests []polymorphichelpers.Logs
 	return nil
 }
 
-func (o LogsOptions) addPrefixIfNeeded(request polymorphichelpers.LogsForObjectResponseWrapper, writer io.Writer) io.Writer {
+func (o LogsOptions) addPrefixIfNeeded(ref corev1.ObjectReference, writer io.Writer) io.Writer {
 	if !o.Prefix {
 		return writer
 	}
 
-	prefix := fmt.Sprintf("[pod/%s -c %s] ", request.SourcePod().Name, request.SourceContainer().Name)
+	// We rely on ref.FieldPath to contain a reference to a container
+	// including a container name (not an index) so we can get a container name
+	// without making an extra API request.
+	var containerName string
+	re := regexp.MustCompile(`spec\.(?:initContainers|containers){(.+)}`)
+	containerNameMatches := re.FindStringSubmatch(ref.FieldPath)
+	if len(containerNameMatches) == 2 {
+		containerName = containerNameMatches[1]
+	}
+
+	prefix := fmt.Sprintf("[pod/%s -c %s] ", ref.Name, containerName)
 	return &prefixingWriter{
 		prefix: []byte(prefix),
 		writer: writer,

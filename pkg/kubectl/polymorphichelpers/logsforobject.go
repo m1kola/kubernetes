@@ -30,10 +30,12 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/reference"
+	"k8s.io/kubernetes/pkg/kubectl/scheme"
 	"k8s.io/kubernetes/pkg/kubectl/util/podutils"
 )
 
-func logsForObject(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) ([]LogsForObjectResponseWrapper, error) {
+func logsForObject(restClientGetter genericclioptions.RESTClientGetter, object, options runtime.Object, timeout time.Duration, allContainers bool) (map[corev1.ObjectReference]rest.ResponseWrapper, error) {
 	clientConfig, err := restClientGetter.ToRESTConfig()
 	if err != nil {
 		return nil, err
@@ -47,7 +49,7 @@ func logsForObject(restClientGetter genericclioptions.RESTClientGetter, object, 
 }
 
 // this is split for easy test-ability
-func logsForObjectWithClient(clientset corev1client.CoreV1Interface, object, options runtime.Object, timeout time.Duration, allContainers bool) ([]LogsForObjectResponseWrapper, error) {
+func logsForObjectWithClient(clientset corev1client.CoreV1Interface, object, options runtime.Object, timeout time.Duration, allContainers bool) (map[corev1.ObjectReference]rest.ResponseWrapper, error) {
 	opts, ok := options.(*corev1.PodLogOptions)
 	if !ok {
 		return nil, errors.New("provided options object is not a PodLogOptions")
@@ -55,13 +57,15 @@ func logsForObjectWithClient(clientset corev1client.CoreV1Interface, object, opt
 
 	switch t := object.(type) {
 	case *corev1.PodList:
-		ret := []LogsForObjectResponseWrapper{}
+		ret := make(map[corev1.ObjectReference]rest.ResponseWrapper)
 		for i := range t.Items {
 			currRet, err := logsForObjectWithClient(clientset, &t.Items[i], options, timeout, allContainers)
 			if err != nil {
 				return nil, err
 			}
-			ret = append(ret, currRet...)
+			for k, v := range currRet {
+				ret[k] = v
+			}
 		}
 		return ret, nil
 
@@ -69,6 +73,7 @@ func logsForObjectWithClient(clientset corev1client.CoreV1Interface, object, opt
 		// if allContainers is true, then we're going to locate all containers and then iterate through them. At that point, "allContainers" is false
 		if !allContainers {
 			var container *v1.Container
+			var isInitContainer bool
 			if opts == nil || len(opts.Container) == 0 {
 				// We don't know container name. In this case we expect only one container to be present in the pod (ignoring InitContainers).
 				// If there is more than one container we should return an error showing all container names.
@@ -82,23 +87,30 @@ func logsForObjectWithClient(clientset corev1client.CoreV1Interface, object, opt
 
 					return nil, errors.New(err)
 				}
-				container = &t.Spec.Containers[0]
+				container, isInitContainer = &t.Spec.Containers[0], false
 			} else {
-				container = findContainerByName(t, opts.Container)
+				container, isInitContainer = findContainerByName(t, opts.Container)
 				if container == nil {
 					return nil, fmt.Errorf("container %s is not valid for pod %s", opts.Container, t.Name)
 				}
 			}
 
-			request := &logsForObjectRequest{
-				Request:   clientset.Pods(t.Namespace).GetLogs(t.Name, opts),
-				pod:       t,
-				container: container,
+			fieldPathTemplate := "spec.containers{%s}"
+			if isInitContainer {
+				fieldPathTemplate = "spec.initContainers{%s}"
 			}
-			return []LogsForObjectResponseWrapper{request}, nil
+			fieldPath := fmt.Sprintf(fieldPathTemplate, container.Name)
+			ref, err := reference.GetPartialReference(scheme.Scheme, t, fieldPath)
+			if err != nil {
+				return nil, fmt.Errorf("Unable to construct reference to '%#v': %v", t, err)
+			}
+
+			ret := make(map[corev1.ObjectReference]rest.ResponseWrapper, 1)
+			ret[*ref] = clientset.Pods(t.Namespace).GetLogs(t.Name, opts)
+			return ret, nil
 		}
 
-		ret := []LogsForObjectResponseWrapper{}
+		ret := make(map[corev1.ObjectReference]rest.ResponseWrapper)
 		for _, c := range t.Spec.InitContainers {
 			currOpts := opts.DeepCopy()
 			currOpts.Container = c.Name
@@ -106,7 +118,9 @@ func logsForObjectWithClient(clientset corev1client.CoreV1Interface, object, opt
 			if err != nil {
 				return nil, err
 			}
-			ret = append(ret, currRet...)
+			for k, v := range currRet {
+				ret[k] = v
+			}
 		}
 		for _, c := range t.Spec.Containers {
 			currOpts := opts.DeepCopy()
@@ -115,7 +129,9 @@ func logsForObjectWithClient(clientset corev1client.CoreV1Interface, object, opt
 			if err != nil {
 				return nil, err
 			}
-			ret = append(ret, currRet...)
+			for k, v := range currRet {
+				ret[k] = v
+			}
 		}
 
 		return ret, nil
@@ -155,18 +171,18 @@ func (l *logsForObjectRequest) SourceContainer() *corev1.Container {
 
 // findContainerByName searches for a container by name amongst all containers (including init containers)
 // Returns nil, if can't find a matching container.
-func findContainerByName(pod *corev1.Pod, name string) *v1.Container {
+func findContainerByName(pod *corev1.Pod, name string) (container *v1.Container, isInitContainer bool) {
 	for _, c := range pod.Spec.InitContainers {
 		if c.Name == name {
-			return &c
+			return &c, true
 		}
 	}
 	for _, c := range pod.Spec.Containers {
 		if c.Name == name {
-			return &c
+			return &c, false
 		}
 	}
-	return nil
+	return nil, false
 }
 
 // getContainerNames returns a formatted string containing the container names
